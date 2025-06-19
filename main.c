@@ -2,23 +2,37 @@
 #include <stdlib.h>
 #include <conio.h>
 #include <windows.h>
-#include <time.h>
+#include <ctype.h>
 
-// Definiciones del laberinto - ahora 12x12
+// Definiciones del laberinto
 #define MAZE_SIZE 12
 #define WALL '#'
 #define PATH '.'
 #define PLAYER 'P'
 #define EXIT 'X'
+#define EMPTY ' '
+
+// Estructura para posición
+typedef struct {
+    int x, y;
+} Position;
 
 // Declaraciones de funciones en ensamblador
-extern void asm_init_maze(char maze[][MAZE_SIZE]);
 extern int asm_check_collision(char maze[][MAZE_SIZE], int x, int y);
 extern void asm_move_player(char maze[][MAZE_SIZE], int* player_x, int* player_y, int new_x, int new_y);
+extern int asm_check_win(char maze[][MAZE_SIZE], int player_x, int player_y);
+extern void asm_init_maze(char maze[][MAZE_SIZE]);
 
-// Funciones para mejorar la interfaz
+// Funciones auxiliares en C
 void clear_screen() {
     system("cls");
+}
+
+void set_cursor_position(int x, int y) {
+    COORD coord;
+    coord.X = x;
+    coord.Y = y;
+    SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), coord);
 }
 
 void hide_cursor() {
@@ -28,86 +42,58 @@ void hide_cursor() {
     SetConsoleCursorInfo(GetStdHandle(STD_OUTPUT_HANDLE), &cursorInfo);
 }
 
-void set_color(int color) {
-    SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), color);
-}
-
-// Imprimir el laberinto con colores
-void print_maze(char maze[][MAZE_SIZE], int moves, int start_time) {
-    clear_screen();
+void print_maze(char maze[][MAZE_SIZE]) {
+    set_cursor_position(0, 2);
+    printf("╔");
+    for (int i = 0; i < MAZE_SIZE; i++) printf("══");
+    printf("╗\n");
     
-    // Título del juego
-    set_color(14); // Amarillo
-    printf("╔══════════════════════════════════════╗\n");
-    printf("║          🎮 LABERINTO GAME 🎮        ║\n");
-    printf("╚══════════════════════════════════════╝\n\n");
-    
-    // Instrucciones
-    set_color(11); // Cian claro
-    printf("Controles: W↑ A← S↓ D→ | R=Reiniciar Q=Salir\n");
-    printf("Objetivo: Llega a la X desde P\n\n");
-    
-    // Laberinto
-    set_color(7); // Blanco
     for (int i = 0; i < MAZE_SIZE; i++) {
+        printf("║");
         for (int j = 0; j < MAZE_SIZE; j++) {
             if (maze[i][j] == WALL) {
-                set_color(8); // Gris oscuro
                 printf("██");
             } else if (maze[i][j] == PLAYER) {
-                set_color(10); // Verde brillante
                 printf("🚀");
             } else if (maze[i][j] == EXIT) {
-                set_color(12); // Rojo brillante
                 printf("🎯");
             } else {
-                set_color(7); // Blanco
                 printf("  ");
             }
         }
-        printf("\n");
+        printf("║\n");
     }
     
-    // Estadísticas
-    set_color(13); // Magenta
-    printf("\n═══════════════════════════════════════\n");
-    printf("Movimientos: %d | Tiempo: %ds\n", moves, (int)(time(NULL) - start_time));
-    printf("═══════════════════════════════════════\n");
-    set_color(7);
+    printf("╚");
+    for (int i = 0; i < MAZE_SIZE; i++) printf("══");
+    printf("╝\n");
 }
 
-void show_instructions() {
-    clear_screen();
-    set_color(14);
+void print_instructions() {
     printf("╔══════════════════════════════════════╗\n");
     printf("║          🎮 LABERINTO GAME 🎮        ║\n");
-    printf("╚══════════════════════════════════════╝\n\n");
-    
-    set_color(11);
-    printf("🎯 OBJETIVO:\n");
-    printf("   Encuentra la salida del laberinto\n\n");
-    
-    printf("🕹️ CONTROLES:\n");
-    printf("   W - Mover arriba\n");
-    printf("   A - Mover izquierda\n");
-    printf("   S - Mover abajo\n");
-    printf("   D - Mover derecha\n");
-    printf("   R - Reiniciar nivel\n");
-    printf("   Q - Salir del juego\n\n");
-    
-    printf("📊 EL JUEGO REGISTRA:\n");
-    printf("   • Número de movimientos\n");
-    printf("   • Tiempo transcurrido\n\n");
-    
-    set_color(10);
-    printf("Presiona cualquier tecla para comenzar...\n");
-    set_color(7);
-    _getch();
+    printf("╚══════════════════════════════════════╝\n");
+    printf("\n");
+    printf("Controles:\n");
+    printf("  W - Mover arriba ⬆️\n");
+    printf("  A - Mover izquierda ⬅️\n");
+    printf("  S - Mover abajo ⬇️\n");
+    printf("  D - Mover derecha ➡️\n");
+    printf("  R - Reiniciar juego 🔄\n");
+    printf("  Q - Salir 🚪\n");
+    printf("\n");
+    printf("Objetivo: Llega al objetivo 🎯 desde tu posición 🚀\n\n");
 }
 
-void show_victory(int moves, int time_taken) {
+void print_status(int moves, int time_elapsed) {
+    set_cursor_position(0, MAZE_SIZE + 6);
+    printf("═══════════════════════════════════════\n");
+    printf("Movimientos: %d | Tiempo: %ds\n", moves, time_elapsed);
+    printf("═══════════════════════════════════════\n");
+}
+
+void show_victory_screen(int moves, int time_elapsed) {
     clear_screen();
-    set_color(10);
     printf("╔══════════════════════════════════════╗\n");
     printf("║              🎉 ¡VICTORIA! 🎉        ║\n");
     printf("╠══════════════════════════════════════╣\n");
@@ -115,16 +101,14 @@ void show_victory(int moves, int time_taken) {
     printf("║    ¡Felicidades! Has completado     ║\n");
     printf("║         el laberinto! 🏆             ║\n");
     printf("║                                      ║\n");
-    set_color(14);
-    printf("║    📊 Estadísticas finales:          ║\n");
-    printf("║       • Movimientos: %-3d             ║\n", moves);
-    printf("║       • Tiempo: %-3d segundos        ║\n", time_taken);
-    set_color(10);
+    printf("║    Estadísticas finales:             ║\n");
+    printf("║    • Movimientos: %-3d               ║\n", moves);
+    printf("║    • Tiempo: %-3d segundos           ║\n", time_elapsed);
     printf("║                                      ║\n");
-    printf("║    Presiona cualquier tecla...       ║\n");
+    printf("║    Presiona cualquier tecla para     ║\n");
+    printf("║    volver al menú principal...       ║\n");
     printf("║                                      ║\n");
     printf("╚══════════════════════════════════════╝\n");
-    set_color(7);
     _getch();
 }
 
@@ -135,76 +119,92 @@ int main() {
     int game_running = 1;
     char input;
     
+    // Configurar consola
     hide_cursor();
-    show_instructions();
     
     while (game_running) {
-        // Reiniciar juego
+        // Inicializar laberinto
         asm_init_maze(maze);
         player_x = 1;
         player_y = 1;
         moves = 0;
+        
+        // Colocar jugador en posición inicial
         maze[player_y][player_x] = PLAYER;
         
         int level_running = 1;
-        int start_time = (int)time(NULL);
+        int start_time = (int)(GetTickCount() / 1000);
         
         while (level_running) {
-            print_maze(maze, moves, start_time);
+            int current_time = (int)(GetTickCount() / 1000);
+            int elapsed_time = current_time - start_time;
             
+            clear_screen();
+            print_instructions();
+            print_maze(maze);
+            print_status(moves, elapsed_time);
+            
+            printf("\nIngresa tu movimiento: ");
             input = _getch();
             input = tolower(input);
             
             int new_x = player_x;
             int new_y = player_y;
-            int valid_input = 0;
+            int valid_move = 0;
             
             switch (input) {
                 case 'w':
                     new_y = player_y - 1;
-                    valid_input = 1;
+                    valid_move = 1;
                     break;
                 case 's':
                     new_y = player_y + 1;
-                    valid_input = 1;
+                    valid_move = 1;
                     break;
                 case 'a':
                     new_x = player_x - 1;
-                    valid_input = 1;
+                    valid_move = 1;
                     break;
                 case 'd':
                     new_x = player_x + 1;
-                    valid_input = 1;
+                    valid_move = 1;
                     break;
                 case 'r':
-                    level_running = 0; // Reiniciar
+                    level_running = 0;
                     break;
                 case 'q':
                     level_running = 0;
                     game_running = 0;
                     break;
+                default:
+                    continue;
             }
             
-            if (valid_input) {
+            if (valid_move) {
+                // Verificar colisión usando ensamblador
                 if (!asm_check_collision(maze, new_x, new_y)) {
-                    // Verificar si llegó a la salida antes de mover
-                    if (maze[new_y][new_x] == EXIT) {
-                        int time_taken = (int)(time(NULL) - start_time);
-                        moves++;
-                        show_victory(moves, time_taken);
+                    // Mover jugador usando ensamblador
+                    asm_move_player(maze, &player_x, &player_y, new_x, new_y);
+                    moves++;
+                    
+                    // Verificar victoria usando ensamblador
+                    if (asm_check_win(maze, player_x, player_y)) {
+                        int final_time = (int)(GetTickCount() / 1000) - start_time;
+                        show_victory_screen(moves, final_time);
                         level_running = 0;
-                    } else {
-                        asm_move_player(maze, &player_x, &player_y, new_x, new_y);
-                        moves++;
                     }
                 }
             }
         }
     }
     
+    // Mensaje de despedida
     clear_screen();
-    set_color(11);
-    printf("¡Gracias por jugar! 👋\n");
-    set_color(7);
+    printf("╔══════════════════════════════════════╗\n");
+    printf("║                                      ║\n");
+    printf("║        ¡Gracias por jugar! 👋       ║\n");
+    printf("║                                      ║\n");
+    printf("╚══════════════════════════════════════╝\n");
+    
     return 0;
 }
